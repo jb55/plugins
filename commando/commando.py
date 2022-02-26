@@ -214,6 +214,11 @@ def commando(plugin, request, peer_id, method, params=None, rune=None):
     plugin.reqs[idnum] = CommandResponse(request)
     send_msg(plugin, peer_id, COMMANDO_CMD, idnum, json.dumps(res))
 
+@plugin.method("commando-invalidaterunes")
+def commando_invalidaterunes(plugin):
+    """Resets the master secret, invalidating all runes in use"""
+    secret = init_master_rune(plugin)
+    plugin.masterrune = runes.MasterRune(secret)
 
 @plugin.method("commando-cacherune")
 def commando_cacherune(plugin, rune):
@@ -288,6 +293,15 @@ def commando_rune(plugin, rune=None, restrictions=[]):
 
     return {'rune': this_rune.to_base64()}
 
+def init_master_rune(plugin):
+    plugin.log("Creating initial rune secret", level='unusual')
+    secret = secrets.token_bytes()
+    plugin.rpc.datastore(key=['commando', 'secret'], hex=secret.hex())
+    plugin.rune_counter = 0
+    plugin.rune_counter_generation = 0
+    plugin.rpc.datastore(key=['commando', 'rune_counter'], string=str(0))
+    return secret
+
 
 @plugin.init()
 def init(options, configuration, plugin):
@@ -327,17 +341,13 @@ def init(options, configuration, plugin):
     else:
         plugin.have_datastore = True
         if secret == []:
-            plugin.log("Creating initial rune secret", level='unusual')
-            secret = secrets.token_bytes()
-            plugin.rpc.datastore(key=['commando', 'secret'], hex=secret.hex())
-            plugin.rune_counter = 0
-            plugin.rune_counter_generation = 0
-            plugin.rpc.datastore(key=['commando', 'rune_counter'], string=str(0))
+            secret = init_master_rune(plugin)
         else:
             secret = bytes.fromhex(secret[0]['hex'])
             counter = plugin.rpc.listdatastore(['commando', 'rune_counter'])['datastore'][0]
             plugin.rune_counter = int(counter['string'])
             plugin.rune_counter_generation = int(counter['generation'])
+
         plugin.log("Initialized with rune support: {} runes so far".format(plugin.rune_counter),
                    level="info")
 
